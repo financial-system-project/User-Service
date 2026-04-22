@@ -1,0 +1,58 @@
+{{- if .Values.postgresql.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "user-service.fullname" . }}-postgres
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "user-service.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "user-service.fullname" . }}-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ include "user-service.fullname" . }}-postgres
+  template:
+    metadata:
+      labels:
+        app: {{ include "user-service.fullname" . }}-postgres
+    spec:
+      containers:
+          - name: postgres
+            image: "{{ .Values.postgresql.image.repository }}:{{ .Values.postgresql.image.tag }}"
+            imagePullPolicy: IfNotPresent
+            ports:
+              - containerPort: 5432
+                name: postgres
+            env:
+              - name: POSTGRES_DB
+                value: {{ .Values.database.name }}
+              - name: POSTGRES_USER
+                valueFrom:
+                  secretKeyRef:
+                    name: {{ include "user-service.fullname" . }}-secret
+                    key: DB_USER
+              - name: POSTGRES_PASSWORD
+                valueFrom:
+                  secretKeyRef:
+                    name: {{ include "user-service.fullname" . }}-secret
+                    key: DB_PASSWORD
+              - name: PGDATA
+                value: /var/lib/postgresql/data/pgdata
+            volumeMounts:
+              - name: data
+                mountPath: /var/lib/postgresql/data
+            resources:
+              {{- toYaml .Values.postgresql.resources | nindent 12 }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: {{ .Values.postgresql.storage.size }}
+        {{- if .Values.postgresql.storage.storageClass }}
+        storageClassName: {{ .Values.postgresql.storage.storageClass }}
+        {{- end }}
+  {{- end }}

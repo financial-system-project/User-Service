@@ -3,8 +3,7 @@ pipeline {
 
     environment {
         IMAGE_NAME = "mahendra3/user"
-        USER_NAME = "mahendra3"
-        CHART_NAME = "user-service"
+        IMAGE_TAG = "${BUILD_NUMBER}"
     }
 
     tools {
@@ -20,26 +19,28 @@ pipeline {
             }
         }
 
-        stage('2: Maven Build') {
+        stage(' 2: Maven Build ') {
             steps {
-                sh '''
-                    java -version
-                    mvn -version
-                    mvn clean install -DskipTests
-                '''
+                sh 'mvn clean install -DskipTests'
             }
         }
 
-        stage(" 3: Building Docker Image ") {
+        stage(' 3: Unit Testing ') {
+            steps {
+                sh 'mvn test'
+            }
+        }
+
+        stage(" 4: Building Docker Image ") {
             steps {
                 script{
-                    docker_image = docker.build "$IMAGE_NAME:latest"
+                    docker.build("${IMAGE_NAME}:${IMAGE_TAG}")
                 }
 
             }
         }
 
-        stage(" 4: Pushing Docker image to DockerHub") {
+        stage(" 5: Pushing Docker image to DockerHub") {
 
             steps {
                 withCredentials([usernamePassword(credentialsId: 'DockerPwd',
@@ -47,56 +48,88 @@ pipeline {
                                   passwordVariable: 'PASS')]) {
                     sh '''
                         echo $PASS | docker login -u $USER --password-stdin
-                        docker push $IMAGE_NAME
+                        docker push ${IMAGE_NAME}:${IMAGE_TAG}
                     '''
                 }
             }
         }
 
-        stage(' 5: clean Docker Images') {
+        stage('6: clean Docker Images') {
             steps {
                 script {
-                    sh 'docker container prune -f'
-                    sh 'docker image prune -f'
+
+                    // previous build number
+                    def PREVIOUS_BUILD = env.BUILD_NUMBER.toInteger() - 1
+
+                    // delete previous image if exists
+                    sh """
+                        docker rmi ${IMAGE_NAME}:${PREVIOUS_BUILD} || true
+                        docker container prune -f
+                        docker image prune -f
+                    """
                 }
             }
         }
 
-        stage('6: Get Chart Version') {
+        stage('7: Update GitOps Repo') {
             steps {
-                script {
-                    env.CHART_VERSION = sh(
-                        script: "grep '^version:' helm-charts/Chart.yaml | awk '{print \$2}'",
-                        returnStdout: true
-                    ).trim()
+
+                withCredentials([string(
+                    credentialsId: 'github-token',
+                    variable: 'GITHUB_TOKEN'
+                )]) {
+
+                    sh """
+                        rm -rf GitOps
+
+                        git clone https://github.com/financial-system-project/GitOps.git
+
+                        cd GitOps/charts/user
+
+
+                        sed -i '' '/repository: mahendra3\\/user/{n;s/tag:.*/tag: "'${BUILD_NUMBER}'"/;}' values.yaml
+
+                        git config user.email "jenkins@gmail.com"
+                        git config user.name "jenkins"
+
+                        git add values.yaml
+
+                        git commit -m "Updated image tag to ${BUILD_NUMBER}"
+
+                        git push https://\$GITHUB_TOKEN@github.com/financial-system-project/GitOps.git main
+                    """
                 }
-                echo "Chart Version: ${CHART_VERSION}"
             }
         }
 
-            stage('7: Build & Push Helm Chart') {
+        stage('8: Ansible Deployment') {
             steps {
                 withCredentials([usernamePassword(
-                    credentialsId: 'DockerPwd',
-                    usernameVariable: 'DOCKER_USERNAME',
-                    passwordVariable: 'DOCKER_PASSWORD'
-                )]) {
+                    credentialsId: 'argocd-creds',
+                    usernameVariable: 'ARGOCD_USER',
+                    passwordVariable: 'ARGOCD_PASS')]) {
                     sh '''
-                        cd helm-charts/
+                        export ARGOCD_USER=$ARGOCD_USER
+                        export ARGOCD_PASS=$ARGOCD_PASS
 
-                        helm package .
+                        cd GitOps
 
-                        echo "$DOCKER_PASSWORD" | helm registry login registry-1.docker.io \
-                            -u "$DOCKER_USERNAME" --password-stdin
+                        ansible-playbook Deployment/deploy-user.yaml -i Deployment/inventory.ini -e "argocd_app_name=user-app"
 
-                        helm push ${CHART_NAME}-${CHART_VERSION}.tgz \
-                            oci://registry-1.docker.io/$USER_NAME
                     '''
                 }
             }
         }
 
-
     }
+    post {
+            always {
+                mail(
+                    to: 'mahendranath281201@gmail.com',
+                    subject: "Build ${currentBuild.currentResult}",
+                    body: "Build URL: ${env.BUILD_URL}"
+                )
+            }
+        }
 
 }

@@ -114,7 +114,7 @@ pipeline {
 
                         cd GitOps
 
-                        ansible-playbook Deployment/deploy-user.yaml -i Deployment/inventory.ini -e "argocd_app_name=user-app"
+                        ansible-playbook Deployment/deploy.yaml -i Deployment/inventory.ini -e "argocd_app_name=user-app"
 
                     '''
                 }

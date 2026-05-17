@@ -20,9 +20,6 @@ This repository contains the **User Service** for a financial microservices plat
 # Technology Stack
 
 * Java
-* Spring Boot
-* Spring Data JPA
-* PostgreSQL
 * Maven
 * Docker
 * Kubernetes

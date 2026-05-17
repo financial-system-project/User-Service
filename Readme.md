@@ -275,3 +275,4 @@ kubectl get svc
 ```bash
 helm list
 ```
+## trigger

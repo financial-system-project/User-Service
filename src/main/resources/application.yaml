@@ -20,7 +20,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics
+        include: health,info
 
 # ── ELK / Logging ────────────────────────────────────────────────────────────
 # LOGSTASH_HOST is injected by the Helm ConfigMap when SPRING_PROFILES_ACTIVE=k8s.
